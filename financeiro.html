@@ -1,0 +1,641 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Controle de Dívida</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <style>
+    :root {
+      --azul: #123456;
+      --azul-2: #1f6f8b;
+      --verde: #1f8a5b;
+      --laranja: #c46a1a;
+      --vermelho: #b42318;
+      --fundo: #f4f7fb;
+      --card: #ffffff;
+      --texto: #172033;
+      --muted: #667085;
+      --borda: #d9e2ef;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: var(--fundo);
+      color: var(--texto);
+    }
+
+    header {
+      padding: 24px 16px;
+      text-align: center;
+      background: linear-gradient(135deg, #0f2d4a, #1f8a5b);
+      color: white;
+    }
+
+    header h1 {
+      margin: 0;
+      font-size: 30px;
+    }
+
+    header p {
+      margin: 8px 0 0;
+      opacity: .92;
+    }
+
+    main {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 16px;
+    }
+
+    h2 { margin-top: 0; }
+
+    .upload,
+    .card {
+      background: var(--card);
+      border: 1px solid var(--borda);
+      border-radius: 8px;
+      padding: 16px;
+    }
+
+    .upload {
+      margin-bottom: 16px;
+      display: grid;
+      gap: 12px;
+    }
+
+    input,
+    select,
+    button {
+      font: inherit;
+      border-radius: 6px;
+      border: 1px solid var(--borda);
+      padding: 10px;
+      min-width: 0;
+    }
+
+    button {
+      cursor: pointer;
+      background: var(--azul);
+      color: white;
+      border: none;
+      font-weight: bold;
+    }
+
+    button.secondary {
+      background: #e9eef6;
+      color: var(--azul);
+    }
+
+    .tabs {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+    }
+
+    .tab {
+      background: #e9eef6;
+      color: var(--azul);
+    }
+
+    .tab.active {
+      background: var(--azul);
+      color: white;
+    }
+
+    .page { display: none; }
+    .page.active { display: block; }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    .metric small {
+      color: var(--muted);
+      font-weight: bold;
+      text-transform: uppercase;
+      font-size: 12px;
+    }
+
+    .metric strong {
+      display: block;
+      margin-top: 6px;
+      font-size: 24px;
+    }
+
+    .ok { color: var(--verde); }
+    .warn { color: var(--laranja); }
+    .bad { color: var(--vermelho); }
+
+    .two {
+      display: grid;
+      grid-template-columns: 1.2fr .8fr;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: white;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    th,
+    td {
+      padding: 10px;
+      border-bottom: 1px solid var(--borda);
+      text-align: left;
+      font-size: 14px;
+    }
+
+    th {
+      background: var(--azul);
+      color: white;
+    }
+
+    .form-row {
+      display: grid;
+      grid-template-columns: 1.2fr .8fr .8fr auto;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    .strategy-list {
+      display: grid;
+      gap: 10px;
+    }
+
+    .strategy {
+      border-left: 5px solid var(--verde);
+      background: #f7fbf8;
+      padding: 12px;
+      border-radius: 6px;
+      line-height: 1.35;
+    }
+
+    .strategy.alerta {
+      border-left-color: var(--vermelho);
+      background: #fff5f5;
+    }
+
+    .strategy.aviso {
+      border-left-color: var(--laranja);
+      background: #fff8ed;
+    }
+
+    .hint {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    canvas {
+      max-height: 340px;
+    }
+
+    @media (max-width: 850px) {
+      .grid,
+      .two,
+      .form-row {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <header>
+    <h1>Controle de Dívida</h1>
+    <p>Organização simples para pagar dívidas sem viver no aperto</p>
+  </header>
+
+  <main>
+    <section class="upload">
+      <strong>Carregar planilha Excel</strong>
+      <input type="file" id="fileInput" accept=".xlsx,.xls,.csv" />
+      <small>Formato esperado: valor total em B3, total pago em B4, saldo devedor em B5 e histórico a partir da linha 8.</small>
+    </section>
+
+    <nav class="tabs">
+      <button class="tab active" data-tab="resumo">Resumo</button>
+      <button class="tab" data-tab="desempenho">Desempenho</button>
+      <button class="tab" data-tab="estrategia">Estratégias</button>
+    </nav>
+
+    <section id="resumo" class="page active">
+      <div class="grid">
+        <div class="card metric">
+          <small>Valor total</small>
+          <strong id="total">R$ 0,00</strong>
+        </div>
+        <div class="card metric">
+          <small>Total pago</small>
+          <strong class="ok" id="pago">R$ 0,00</strong>
+        </div>
+        <div class="card metric">
+          <small>Saldo devedor</small>
+          <strong class="warn" id="saldo">R$ 0,00</strong>
+        </div>
+        <div class="card metric">
+          <small>Quitado</small>
+          <strong id="percentual">0%</strong>
+        </div>
+      </div>
+
+      <div class="two">
+        <div class="card">
+          <h2>Histórico</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Data</th>
+                <th>Valor</th>
+                <th>Observação</th>
+              </tr>
+            </thead>
+            <tbody id="historico"></tbody>
+          </table>
+        </div>
+
+        <div class="card">
+          <h2>Diagnóstico rápido</h2>
+          <div id="diagnostico" class="strategy-list"></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="desempenho" class="page">
+      <div class="two">
+        <div class="card">
+          <h2>Evolução dos lançamentos</h2>
+          <canvas id="chartPagamentos"></canvas>
+        </div>
+        <div class="card">
+          <h2>Saldo da dívida</h2>
+          <canvas id="chartQuitacao"></canvas>
+        </div>
+      </div>
+    </section>
+
+    <section id="estrategia" class="page">
+      <div class="two">
+        <div class="card">
+          <h2>Plano estratégico</h2>
+
+          <label>Meta de quitação</label>
+          <select id="ritmo">
+            <option value="agressivo">Rápido</option>
+            <option value="equilibrado" selected>Equilibrado</option>
+            <option value="confortavel">Confortável</option>
+          </select>
+
+          <div id="plano" class="strategy-list" style="margin-top:14px;"></div>
+        </div>
+
+        <div class="card">
+          <h2>Simulação da quitação</h2>
+          <canvas id="chartEstrategia"></canvas>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <script>
+    let linhas = [];
+    let resumoManual = { total: 0, pago: 0, saldo: 0 };
+
+    let chartPagamentos;
+    let chartQuitacao;
+    let chartEstrategia;
+
+    const dinheiro = v => Number(v || 0).toLocaleString("pt-BR", {
+      style: "currency",
+      currency: "BRL"
+    });
+
+    function parseValor(v) {
+      if (typeof v === "number") return v;
+      if (!v) return 0;
+
+      const texto = String(v)
+        .replace("R$", "")
+        .replace(/\s/g, "")
+        .replace(/\./g, "")
+        .replace(",", ".");
+
+      const numero = texto.match(/-?\d+(\.\d+)?/);
+      return numero ? Number(numero[0]) : 0;
+    }
+
+    function parseData(v) {
+      if (!v) return "";
+
+      if (v instanceof Date) {
+        return v.toLocaleDateString("pt-BR");
+      }
+
+      if (typeof v === "number" && v > 20000 && v < 60000) {
+        const data = XLSX.SSF.parse_date_code(v);
+        if (data) {
+          return String(data.d).padStart(2, "0") + "/" +
+            String(data.m).padStart(2, "0") + "/" +
+            data.y;
+        }
+      }
+
+      let texto = String(v).trim();
+      const bugData = texto.match(/^(\d{2})\/(\d{2})(\d{4})$/);
+      if (bugData) {
+        texto = `${bugData[1]}/${bugData[2]}/${bugData[3]}`;
+      }
+
+      return texto;
+    }
+
+    function lerWorkbook(workbook) {
+      const sheet = workbook.Sheets[workbook.SheetNames[0]];
+
+      resumoManual = {
+        total: parseValor(sheet["B3"]?.v),
+        pago: parseValor(sheet["B4"]?.v),
+        saldo: parseValor(sheet["B5"]?.v)
+      };
+
+      const rows = XLSX.utils.sheet_to_json(sheet, {
+        header: 1,
+        defval: "",
+        raw: true
+      });
+
+      linhas = [];
+
+      for (let i = 7; i < rows.length; i++) {
+        const row = rows[i];
+        const data = parseData(row[1]);
+        const valor = parseValor(row[2]);
+        const obs = String(row[3] || "").trim();
+
+        const dataValida = /^\d{2}\/\d{2}\/\d{4}$/.test(data);
+        if (!dataValida && (!obs || obs === "-")) continue;
+        linhas.push({ data, valor, obs });
+      }
+    }
+
+    document.getElementById("fileInput").addEventListener("change", async e => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      const buffer = await file.arrayBuffer();
+      const workbook = XLSX.read(buffer, {
+        cellDates: true,
+        cellNF: true,
+        cellText: true
+      });
+
+      lerWorkbook(workbook);
+      renderTudo();
+    });
+
+    document.querySelectorAll(".tab").forEach(btn => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll(".tab").forEach(b => b.classList.remove("active"));
+        document.querySelectorAll(".page").forEach(p => p.classList.remove("active"));
+
+        btn.classList.add("active");
+        document.getElementById(btn.dataset.tab).classList.add("active");
+      });
+    });
+
+    document.getElementById("ritmo").addEventListener("change", renderPlano);
+
+    function calcularResumo() {
+      const pagoPlanilha = linhas.reduce((s, l) => s + Math.max(0, l.valor), 0);
+      const pago = resumoManual.pago || pagoPlanilha;
+
+      let total = resumoManual.total || 0;
+      let saldo = resumoManual.saldo || 0;
+
+      if (!total && saldo) total = pago + saldo;
+      if (!saldo && total) saldo = Math.max(0, total - pago);
+
+      return {
+        total,
+        pago,
+        saldo,
+        percentual: total ? pago / total : 0
+      };
+    }
+
+    function renderTudo() {
+      renderResumo();
+      renderCharts();
+      renderPlano();
+    }
+
+    function renderResumo() {
+      const r = calcularResumo();
+
+      document.getElementById("total").textContent = dinheiro(r.total);
+      document.getElementById("pago").textContent = dinheiro(r.pago);
+      document.getElementById("saldo").textContent = dinheiro(r.saldo);
+      document.getElementById("percentual").textContent = (r.percentual * 100).toFixed(1).replace(".", ",") + "%";
+
+      document.getElementById("historico").innerHTML = linhas.map(l => `
+        <tr>
+          <td>${l.data || "-"}</td>
+          <td class="${l.valor < 0 ? "bad" : "ok"}">${dinheiro(l.valor)}</td>
+          <td>${l.obs || "-"}</td>
+        </tr>
+      `).join("");
+
+      const diagnostico = [];
+
+      if (!r.total) {
+        diagnostico.push(["aviso", "Carregue a planilha para ver o diagnóstico da dívida."]);
+      } else if (r.percentual >= .7) {
+        diagnostico.push(["ok", "A dívida já está bem avançada. O foco agora é manter constância até terminar."]);
+      } else if (r.percentual >= .3) {
+        diagnostico.push(["ok", "A dívida está andando. Evite pausas longas entre os pagamentos."]);
+      } else {
+        diagnostico.push(["aviso", "A fase inicial pede previsibilidade: melhor pagar menos, mas pagar toda semana."]);
+      }
+
+      diagnostico.push(["ok", "Evite pagamentos na segunda e terça para não competir com despesas do começo da semana."]);
+      diagnostico.push(["ok", "Concentre pagamentos em sexta ou sábado, quando fica mais fácil ver o dinheiro disponível."]);
+
+      document.getElementById("diagnostico").innerHTML = diagnostico.map(([tipo, texto]) => `
+        <div class="strategy ${tipo === "aviso" ? "aviso" : ""}">${texto}</div>
+      `).join("");
+    }
+
+    function renderCharts() {
+      const labels = linhas.map((l, i) => l.data || `Linha ${i + 1}`);
+      const valores = linhas.map(l => l.valor);
+
+      const saldos = [];
+      let saldoAtual = resumoManual.total || calcularResumo().total;
+      linhas.forEach((l, i) => {
+        saldoAtual -= l.valor;
+        saldos[i] = saldoAtual;
+      });
+
+      if (chartPagamentos) chartPagamentos.destroy();
+      if (chartQuitacao) chartQuitacao.destroy();
+
+      chartPagamentos = new Chart(document.getElementById("chartPagamentos"), {
+        type: "bar",
+        data: {
+          labels,
+          datasets: [{
+            label: "Movimentações registradas",
+            data: valores,
+            backgroundColor: valores.map(v => v < 0 ? "#b42318" : "#1f6f8b"),
+            borderColor: "#123456",
+            borderWidth: 1
+          }]
+        },
+        options: {
+          plugins: {
+            legend: { labels: { color: "#172033" } }
+          },
+          scales: {
+            y: {
+              beginAtZero: true,
+              ticks: { callback: value => dinheiro(value) }
+            }
+          }
+        }
+      });
+
+      chartQuitacao = new Chart(document.getElementById("chartQuitacao"), {
+        type: "line",
+        data: {
+          labels,
+          datasets: [{
+            label: "Saldo devedor após cada lançamento",
+            data: saldos,
+            borderColor: "#123456",
+            backgroundColor: "rgba(18, 52, 86, 0.12)",
+            fill: true,
+            tension: 0.25,
+            pointBackgroundColor: "#123456",
+            pointBorderColor: "#123456"
+          }]
+        },
+        options: {
+          plugins: {
+            legend: { labels: { color: "#172033" } }
+          },
+          scales: {
+            y: {
+              beginAtZero: true,
+              ticks: { callback: value => dinheiro(value) }
+            }
+          }
+        }
+      });
+    }
+
+    function renderPlano() {
+      const r = calcularResumo();
+      const ritmo = document.getElementById("ritmo").value;
+
+      const config = {
+        agressivo: {
+          nome: "rápido",
+          meses: 3,
+          texto: "Maior esforço agora para terminar mais cedo."
+        },
+        equilibrado: {
+          nome: "equilibrado",
+          meses: 5,
+          texto: "Bom equilíbrio entre pagar a dívida e manter fôlego no mês."
+        },
+        confortavel: {
+          nome: "confortável",
+          meses: 8,
+          texto: "Parcela menor, mais leve para a rotina, mas demora um pouco mais."
+        }
+      }[ritmo];
+
+      const mensal = r.saldo / config.meses;
+      const semanal = mensal / 4.33;
+
+      document.getElementById("plano").innerHTML = `
+        <div class="strategy">
+          <strong>Meta ${config.nome}</strong><br>
+          Para quitar em aproximadamente ${config.meses} meses, separar ${dinheiro(mensal)} por mês.
+        </div>
+        <div class="strategy">
+          <strong>Valor semanal recomendado</strong><br>
+          Cerca de ${dinheiro(semanal)} por semana, evitando segunda e terça.
+        </div>
+        <div class="strategy">
+          <strong>Leitura do plano</strong><br>
+          ${config.texto}
+        </div>
+        <div class="strategy">
+          <strong>Regra simples</strong><br>
+          Primeiro contas obrigatórias, depois reserva, depois dívida, depois gastos livres.
+        </div>
+      `;
+
+      renderGraficoEstrategia(config.meses, mensal, r.saldo);
+    }
+
+    function renderGraficoEstrategia(meses, pagamentoMensal, saldoAtual) {
+      const labels = [];
+      const saldos = [];
+
+      for (let i = 0; i <= meses; i++) {
+        labels.push(i === 0 ? "Hoje" : `Mês ${i}`);
+        saldos.push(Math.max(0, saldoAtual - pagamentoMensal * i));
+      }
+
+      if (chartEstrategia) chartEstrategia.destroy();
+
+      chartEstrategia = new Chart(document.getElementById("chartEstrategia"), {
+        type: "line",
+        data: {
+          labels,
+          datasets: [{
+            label: "Saldo previsto",
+            data: saldos,
+            borderColor: "#123456",
+            backgroundColor: "rgba(18, 52, 86, 0.12)",
+            fill: true,
+            tension: 0.25,
+            pointBackgroundColor: "#123456",
+            pointBorderColor: "#123456"
+          }]
+        },
+        options: {
+          plugins: {
+            legend: { labels: { color: "#172033" } }
+          },
+          scales: {
+            y: {
+              beginAtZero: true,
+              ticks: { callback: value => dinheiro(value) }
+            }
+          }
+        }
+      });
+    }
+
+    renderTudo();
+  </script>
+</body>
+</html>
